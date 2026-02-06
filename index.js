@@ -33,20 +33,32 @@ app.post('/webhook', async (req, res) => {
 
     const senderId = messaging.sender.id;
 
-    // текст или payload кнопки
-    const text = (messaging.message.text || messaging.message.quick_reply?.payload || '').trim().toLowerCase();
+    // Сначала берём payload от кнопки, если нет — текст
+    const text = (messaging.message.quick_reply?.payload || messaging.message.text || '').trim().toLowerCase();
 
     console.log('📩 Пользователь:', text);
 
-    // ===== ЛОГИКА =====
+    // ===== ЛОГИКА БОТА =====
     switch (text) {
-      case 'привет':
       case 'start':
+      case 'привет':
         await sendMainMenu(senderId);
         break;
 
       case 'catalog':
-        await sendProduct(senderId, 0); // первый товар
+        await sendCategoryMenu(senderId);
+        break;
+
+      case 'dresses':
+        await sendProduct(senderId, 0); // первый товар платья
+        break;
+
+      case 'next_product':
+        await sendProduct(senderId, 1); // следующий товар
+        break;
+
+      case 'order':
+        await sendText(senderId, '📝 Для заказа напишите: Имя + телефон');
         break;
 
       case 'delivery':
@@ -57,16 +69,9 @@ app.post('/webhook', async (req, res) => {
         await sendText(senderId, '👩‍💼 Напишите номер телефона — менеджер свяжется с вами.');
         break;
 
-      case 'next_product':
-        await sendNextProduct(senderId);
-        break;
-
-      case 'order':
-        await sendText(senderId, '📝 Для заказа напишите:\nИмя + телефон');
-        break;
-
       default:
         await sendText(senderId, '❗ Не понимаю команду. Пожалуйста, выберите из меню.');
+        await sendMainMenu(senderId);
     }
 
     res.sendStatus(200);
@@ -77,7 +82,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ===== ФУНКЦИИ ОТПРАВКИ =====
+// ===== ФУНКЦИИ СООБЩЕНИЙ =====
 async function sendText(recipientId, text) {
   await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
@@ -101,54 +106,4 @@ async function sendMainMenu(recipientId) {
       message: {
         text: 'Привет! Я помогу выбрать одежду 👗\nВыберите, что вас интересует ⬇️',
         quick_replies: [
-          { content_type: 'text', title: '👗 Каталог', payload: 'catalog' },
-          { content_type: 'text', title: '🚚 Доставка', payload: 'delivery' },
-          { content_type: 'text', title: '👩‍💼 Менеджер', payload: 'manager' }
-        ]
-      }
-    })
-  });
-}
-
-// ===== ТОВАРЫ =====
-const products = [
-  { name: 'Платье «Алиса»', size: 'S–M–L', price: '1100 грн' },
-  { name: 'Платье «Луна»', size: 'M–L', price: '1200 грн' },
-  { name: 'Платье «Звезда»', size: 'S–L', price: '1300 грн' }
-];
-
-async function sendProduct(recipientId, index) {
-  const product = products[index] || products[0];
-  await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_type: 'RESPONSE',
-      recipient: { id: recipientId },
-      message: {
-        text: `👗 ${product.name}\nРазмеры: ${product.size}\nЦена: ${product.price}`,
-        quick_replies: [
-          { content_type: 'text', title: '🛒 Заказать', payload: 'order' },
-          { content_type: 'text', title: '➡️ Другой товар', payload: 'next_product' }
-        ]
-      }
-    })
-  });
-}
-
-// ===== СЛЕДУЮЩИЙ ТОВАР =====
-let productIndexMap = {}; // хранили индекс последнего товара для каждого пользователя
-
-async function sendNextProduct(recipientId) {
-  const currentIndex = productIndexMap[recipientId] || 0;
-  const nextIndex = (currentIndex + 1) % products.length;
-  productIndexMap[recipientId] = nextIndex;
-
-  await sendProduct(recipientId, nextIndex);
-}
-
-// ===== СТАРТ СЕРВЕРА =====
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`🚀 Сервер запущен на порту ${PORT}`);
-});
+          { content_type: 'text',
