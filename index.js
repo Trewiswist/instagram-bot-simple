@@ -1,76 +1,67 @@
 import express from 'express';
-import fetch from 'node-fetch'; // убедись, что пакет установлен через npm install node-fetch
+import fetch from 'node-fetch';
 
 const app = express();
 app.use(express.json());
 
-// Настройки
+// === НАСТРОЙКИ ===
 const VERIFY_TOKEN = 'my_verify_token';
-const PAGE_TOKEN = 'IGAAM33qWrI19BZAFpWUzVLYmJlY01ZAUy1oc3VodmtpUEljM09YOEFlZAzJiV2hWajBncUNvNnlsblI5SEh0OS03NkJXV2ZAGX0pJRmZAQdWkzRW9BNmRqd0lINFFORFo2UWtCOTBUa1pPbl81Y3FyVUowOVZAJVExpaFFhaGt4X0RJTQZDZD';
+const PAGE_TOKEN = 'ТВОЙ_PAGE_ACCESS_TOKEN';
 
-// Endpoint для проверки Webhook
+// === ПРОВЕРКА WEBHOOK (Meta) ===
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
-    if (mode && token) {
-        if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-            console.log('WEBHOOK_VERIFIED');
-            res.status(200).send(challenge);
-        } else {
-            res.sendStatus(403);
-        }
-    } else {
-        res.sendStatus(400);
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+        console.log('✅ Webhook verified');
+        return res.status(200).send(challenge);
     }
+    return res.sendStatus(403);
 });
 
-// Endpoint для получения сообщений
+// === ПРИЁМ СООБЩЕНИЙ ===
 app.post('/webhook', async (req, res) => {
-    const body = req.body;
+    try {
+        const entry = req.body.entry?.[0];
+        const messaging = entry?.messaging?.[0];
 
-    if (body.object === 'instagram') {
-        body.entry.forEach(async (entry) => {
-            const messaging = entry.messaging || [];
-            messaging.forEach(async (event) => {
-                if (event.message && event.sender) {
-                    const senderId = event.sender.id;
-                    console.log('Получено сообщение от:', senderId);
+        if (!messaging || !messaging.message?.text) {
+            return res.sendStatus(200);
+        }
 
-                    // Отправляем первый ответ
-                    await sendMessage(senderId, 'Привет! Это первый ответ от тестового бота.');
-                }
-            });
-        });
+        const senderId = messaging.sender.id;
+        const text = messaging.message.text;
 
-        res.status(200).send('EVENT_RECEIVED');
-    } else {
-        res.sendStatus(404);
+        console.log('📩 Сообщение:', text);
+
+        // ОТВЕТ
+        await sendMessage(senderId, 'Привет! Я бот 👋');
+
+        res.sendStatus(200);
+    } catch (err) {
+        console.error('❌ Ошибка:', err);
+        res.sendStatus(500);
     }
 });
 
-// Функция отправки сообщения через Instagram Graph API
-async function sendMessage(recipientId, messageText) {
-    const url = `https://graph.facebook.com/v17.0/me/messages?access_token=${PAGE_TOKEN}`;
-    const payload = {
-        recipient: { id: recipientId },
-        message: { text: messageText }
-    };
+// === ОТПРАВКА СООБЩЕНИЯ ===
+async function sendMessage(recipientId, text) {
+    const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`;
 
-    try {
-        const response = await fetch(url, {
-            method: 'POST',
-            body: JSON.stringify(payload),
-            headers: { 'Content-Type': 'application/json' }
-        });
-        const data = await response.json();
-        console.log('Ответ отправлен:', data);
-    } catch (err) {
-        console.error('Ошибка при отправке сообщения:', err);
-    }
+    await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            recipient: { id: recipientId },
+            message: { text }
+        })
+    });
 }
 
-// Запуск сервера
+// === ЗАПУСК ===
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`🚀 Сервер запущен на порту ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`🚀 Сервер запущен на порту ${PORT}`);
+});
