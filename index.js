@@ -4,111 +4,147 @@ import fetch from 'node-fetch';
 const app = express();
 app.use(express.json());
 
-// === НАСТРОЙКИ ===
-const VERIFY_TOKEN = 'my_verify_token'; // сюда твой verify token
-const PAGE_TOKEN = 'EAAW7HPxJmKUBQqWEFdL9sfqxsmoBP4jPZAnzw7CvahZBAls3BaCqSdOCXzddbw0kjBBc73PIIMmuBwNhYbZAtunztGCOroZCoS75PZBWu91on9eud7156RRy1b3fFdazQhZArWLRB2u8Rclg7hvWxGrgpks2XAUUzlXfiX3e6aXyOt7NLv1zbLE9Q7k6IN2YY3FZBV27AZDZD'; // сюда Page Access Token
+// ===== НАСТРОЙКИ =====
+const VERIFY_TOKEN = 'my_verify_token';
+const PAGE_TOKEN = 'EAAW7HPxJmKUBQqWEFdL9sfqxsmoBP4jPZAnzw7CvahZBAls3BaCqSdOCXzddbw0kjBBc73PIIMmuBwNhYbZAtunztGCOroZCoS75PZBWu91on9eud7156RRy1b3fFdazQhZArWLRB2u8Rclg7hvWxGrgpks2XAUUzlXfiX3e6aXyOt7NLv1zbLE9Q7k6IN2YY3FZBV27AZDZD';
 
-// === ПРОВЕРКА WEBHOOK (Meta) ===
+// ===== ТОВАРЫ (демо) =====
+const products = [
+  {
+    image: 'https://via.placeholder.com/500x600.png?text=Dress+1',
+    text: '👗 Платье Classic\n\n▫️ Размеры: S / M / L\n▫️ Ткань: хлопок\n▫️ Цена: 1200 грн'
+  },
+  {
+    image: 'https://via.placeholder.com/500x600.png?text=Dress+2',
+    text: '👗 Платье Elegant\n\n▫️ Размеры: M / L\n▫️ Ткань: вискоза\n▫️ Цена: 1450 грн'
+  }
+];
+
+// простая память
+const userState = {};
+
+// ===== ПРОВЕРКА WEBHOOK =====
 app.get('/webhook', (req, res) => {
-    const mode = req.query['hub.mode'];
-    const token = req.query['hub.verify_token'];
-    const challenge = req.query['hub.challenge'];
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
 
-    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-        console.log('✅ Webhook verified');
-        return res.status(200).send(challenge);
-    }
-    return res.sendStatus(403);
+  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+    console.log('✅ Webhook verified');
+    return res.status(200).send(challenge);
+  }
+  return res.sendStatus(403);
 });
 
-// === ПРИЁМ СООБЩЕНИЙ ===
+// ===== ПОЛУЧЕНИЕ СООБЩЕНИЙ =====
 app.post('/webhook', async (req, res) => {
-    try {
-        const entry = req.body.entry?.[0];
-        const messaging = entry?.messaging?.[0];
+  try {
+    const messaging = req.body.entry?.[0]?.messaging?.[0];
+    if (!messaging?.sender?.id) return res.sendStatus(200);
 
-        if (!messaging) return res.sendStatus(200);
+    const senderId = messaging.sender.id;
+    const text = messaging.message?.text;
 
-        const senderId = messaging.sender.id;
-        const text = messaging.message?.text;
+    console.log('📩 Сообщение:', text);
 
-        console.log('📩 Сообщение:', text);
-
-        if (text?.toLowerCase() === 'привет') {
-            // Отправляем приветствие с кнопками Quick Replies
-            await sendQuickReplies(senderId);
-        } else if (messaging.message?.quick_reply?.payload) {
-            // Пользователь нажал на кнопку
-            const payload = messaging.message.quick_reply.payload;
-            console.log('📤 Payload кнопки:', payload);
-
-            // Пример реакции на кнопки
-            if (payload === 'PRODUCTS') {
-                await sendMessage(senderId, 'Вот наши товары 👗');
-            } else if (payload === 'SIZES') {
-                await sendMessage(senderId, 'Размеры: S, M, L, XL 📏');
-            } else if (payload === 'DELIVERY') {
-                await sendMessage(senderId, 'Доставка: курьер или самовывоз 🚚');
-            } else if (payload === 'MANAGER') {
-                await sendMessage(senderId, 'Связь с менеджером 👩‍💼: +380XXXXXXXXX');
-            } else {
-                await sendMessage(senderId, 'Вы выбрали: ' + payload);
-            }
-        } else {
-            await sendMessage(senderId, 'Я помогу выбрать одежду 👗\nНапиши "Привет", чтобы начать.');
-        }
-
-        res.sendStatus(200);
-    } catch (err) {
-        console.error('❌ Ошибка:', err);
-        res.sendStatus(500);
+    if (!text || text.toLowerCase() === 'привет') {
+      userState[senderId] = { productIndex: 0 };
+      await sendMainMenu(senderId);
     }
+
+    if (text === '👗 Товары') {
+      userState[senderId] = { productIndex: 0 };
+      await sendProduct(senderId);
+    }
+
+    if (text === '➡️ Другой товар') {
+      userState[senderId].productIndex =
+        (userState[senderId].productIndex + 1) % products.length;
+      await sendProduct(senderId);
+    }
+
+    if (text === '🛒 Заказать') {
+      await sendText(senderId, '✍️ Напишите ваш номер телефона, и менеджер свяжется с вами.');
+    }
+
+    if (text === '📏 Размеры') {
+      await sendText(senderId, '📏 Размеры: S / M / L\nЕсли нужен совет — напишите менеджеру 👩‍💼');
+    }
+
+    if (text === '🚚 Доставка') {
+      await sendText(senderId, '🚚 Доставка по Украине\nНовой Почтой 1–3 дня');
+    }
+
+    if (text === '👩‍💼 Менеджер') {
+      await sendText(senderId, '👩‍💼 Менеджер скоро свяжется с вами');
+    }
+
+    res.sendStatus(200);
+  } catch (err) {
+    console.error('❌ Ошибка:', err);
+    res.sendStatus(500);
+  }
 });
 
-// === ФУНКЦИЯ ОТПРАВКИ QUICK REPLIES ===
-async function sendQuickReplies(recipientId) {
-    const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`;
+// ===== ФУНКЦИИ ОТПРАВКИ =====
+async function sendMainMenu(id) {
+  await sendQuickReplies(id,
+    'Привет! Я помогу выбрать одежду 👗\nВыберите, что вас интересует ⬇️',
+    ['👗 Товары', '📏 Размеры', '🚚 Доставка', '👩‍💼 Менеджер']
+  );
+}
 
-    const body = {
-        recipient: { id: recipientId },
-        message: {
-            text: 'Привет! Я помогу выбрать одежду 👗\nВыберите, что вас интересует ⬇️',
-            quick_replies: [
-                { content_type: 'text', title: '👗 Товары', payload: 'PRODUCTS' },
-                { content_type: 'text', title: '📏 Размеры', payload: 'SIZES' },
-                { content_type: 'text', title: '🚚 Доставка', payload: 'DELIVERY' },
-                { content_type: 'text', title: '👩‍💼 Менеджер', payload: 'MANAGER' },
-            ]
+async function sendProduct(id) {
+  const product = products[userState[id].productIndex];
+
+  await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id },
+      message: {
+        attachment: {
+          type: 'image',
+          payload: { url: product.image }
         }
-    };
+      }
+    })
+  });
 
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-    });
-
-    const data = await response.json();
-    console.log('📤 Ответ Meta:', data);
+  await sendQuickReplies(id, product.text, ['🛒 Заказать', '➡️ Другой товар']);
 }
 
-// === ПРОСТАЯ ОТПРАВКА СООБЩЕНИЯ ===
-async function sendMessage(recipientId, text) {
-    const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`;
-
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            recipient: { id: recipientId },
-            message: { text }
-        })
-    });
-
-    const data = await response.json();
-    console.log('📤 Ответ Meta:', data);
+async function sendText(id, text) {
+  await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id },
+      message: { text }
+    })
+  });
 }
 
-// === ЗАПУСК СЕРВЕРА ===
+async function sendQuickReplies(id, text, buttons) {
+  await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id },
+      message: {
+        text,
+        quick_replies: buttons.map(b => ({
+          content_type: 'text',
+          title: b,
+          payload: b
+        }))
+      }
+    })
+  });
+}
+
+// ===== ЗАПУСК =====
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`🚀 Сервер запущен на порту ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Сервер запущен на порту ${PORT}`);
+});
