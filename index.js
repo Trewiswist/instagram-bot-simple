@@ -28,52 +28,63 @@ app.post('/webhook', async (req, res) => {
     const entry = req.body.entry?.[0];
     const messaging = entry?.messaging?.[0];
 
-    // ❌ нет сообщения
-    if (!messaging || !messaging.message) {
-      return res.sendStatus(200);
-    }
-
-    // ❌ echo (бот не отвечает сам себе)
-    if (messaging.message.is_echo) {
+    if (!messaging || !messaging.message || messaging.message.is_echo) {
       return res.sendStatus(200);
     }
 
     const senderId = messaging.sender.id;
+    const text = messaging.message.text || messaging.message.quick_reply?.payload;
 
-    // текст или payload кнопки
-    const text =
-      messaging.message.text ||
-      messaging.message.quick_reply?.payload;
-
-    if (!text) {
-      return res.sendStatus(200);
-    }
+    if (!text) return res.sendStatus(200);
 
     console.log('📩 Пользователь:', text);
 
     // ===== ЛОГИКА =====
-    if (text.toLowerCase() === 'привет' || text === 'START') {
-      await sendMainMenu(senderId);
-    }
+    switch (text) {
+      case 'привет':
+      case 'START':
+        await sendMainMenu(senderId);
+        break;
 
-    else if (text === 'CATALOG') {
-      await sendProduct(senderId);
-    }
+      // ===== КАТАЛОГ =====
+      case 'CATALOG':
+        await sendCategoryMenu(senderId);
+        break;
 
-    else if (text === 'DELIVERY') {
-      await sendText(senderId, '🚚 Доставка по Украине 1–3 дня.\nОплата при получении.');
-    }
+      case 'DRESSES':
+        await sendProduct(senderId, 'Платья');
+        break;
 
-    else if (text === 'MANAGER') {
-      await sendText(senderId, '👩‍💼 Напишите номер телефона — менеджер свяжется с вами.');
-    }
+      case 'SUITS':
+        await sendProduct(senderId, 'Костюмы');
+        break;
 
-    else if (text === 'NEXT_PRODUCT') {
-      await sendText(senderId, '👗 Другой товар:\nПлатье «Луна»\nЦена: 1200 грн');
-    }
+      case 'OUTER':
+        await sendProduct(senderId, 'Верхняя одежда');
+        break;
 
-    else if (text === 'ORDER') {
-      await sendText(senderId, '📝 Для заказа напишите:\nИмя + телефон');
+      case 'UNDER':
+        await sendProduct(senderId, 'Нижнее белье');
+        break;
+
+      case 'NEXT_PRODUCT':
+        await sendNextProduct(senderId);
+        break;
+
+      case 'ORDER':
+        await sendText(senderId, '📝 Для заказа оставьте свои контакты (Имя + телефон), менеджер свяжется с вами.');
+        break;
+
+      case 'DELIVERY':
+        await sendText(senderId, '🚚 Доставка по Украине 1–3 дня. Оплата при получении.');
+        break;
+
+      case 'MANAGER':
+        await sendText(senderId, '👩‍💼 Напишите, как с вами связаться, и менеджер свяжется с вами.');
+        break;
+
+      default:
+        await sendText(senderId, '❗ Не понимаю команду. Пожалуйста, выберите из меню.');
     }
 
     res.sendStatus(200);
@@ -84,7 +95,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ===== СООБЩЕНИЯ =====
+// ===== ФУНКЦИИ =====
 async function sendText(recipientId, text) {
   await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
@@ -108,7 +119,7 @@ async function sendMainMenu(recipientId) {
       message: {
         text: 'Привет! Я помогу выбрать одежду 👗\nВыберите, что вас интересует ⬇️',
         quick_replies: [
-          { content_type: 'text', title: '👗 Товары', payload: 'CATALOG' },
+          { content_type: 'text', title: '👗 Каталог', payload: 'CATALOG' },
           { content_type: 'text', title: '🚚 Доставка', payload: 'DELIVERY' },
           { content_type: 'text', title: '👩‍💼 Менеджер', payload: 'MANAGER' }
         ]
@@ -117,8 +128,8 @@ async function sendMainMenu(recipientId) {
   });
 }
 
-// ===== ТОВАР =====
-async function sendProduct(recipientId) {
+// ===== МЕНЮ КАТЕГОРИЙ =====
+async function sendCategoryMenu(recipientId) {
   await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -126,17 +137,93 @@ async function sendProduct(recipientId) {
       messaging_type: 'RESPONSE',
       recipient: { id: recipientId },
       message: {
-        text: '👗 Платье «Алиса»\nРазмеры: S–M–L\nЦена: 1100 грн',
+        text: 'Выберите категорию:',
         quick_replies: [
-          { content_type: 'text', title: '🛒 Заказать', payload: 'ORDER' },
-          { content_type: 'text', title: '➡️ Другой', payload: 'NEXT_PRODUCT' }
+          { content_type: 'text', title: 'Платья', payload: 'DRESSES' },
+          { content_type: 'text', title: 'Костюмы', payload: 'SUITS' },
+          { content_type: 'text', title: 'Верхняя одежда', payload: 'OUTER' },
+          { content_type: 'text', title: 'Нижнее белье', payload: 'UNDER' }
         ]
       }
     })
   });
 }
 
-// ===== СТАРТ =====
+// ===== ТОВАРЫ =====
+const products = {
+  'Платья': [
+    { name: '123', size: '123', price: '123' },
+    { name: '123', size: '123', price: '123' },
+    { name: '123', size: '123', price: '123' }
+  ],
+  'Костюмы': [
+    { name: '123', size: '123', price: '123' },
+    { name: '123', size: '123', price: '123' },
+    { name: '123', size: '123', price: '123' }
+  ],
+  'Верхняя одежда': [
+    { name: '123', size: '123', price: '123' },
+    { name: '123', size: '123', price: '123' },
+    { name: '123', size: '123', price: '123' }
+  ],
+  'Нижнее белье': [
+    { name: '123', size: '123', price: '123' },
+    { name: '123', size: '123', price: '123' },
+    { name: '123', size: '123', price: '123' }
+  ]
+};
+
+let productIndex = 0;
+let currentCategory = 'Платья';
+
+async function sendProduct(recipientId, category) {
+  currentCategory = category;
+  productIndex = 0;
+  const product = products[category][productIndex];
+
+  await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_type: 'RESPONSE',
+      recipient: { id: recipientId },
+      message: {
+        text: `👗 ${product.name}\nРазмеры: ${product.size}\nЦена: ${product.price}`,
+        quick_replies: [
+          { content_type: 'text', title: '🛒 Заказать', payload: 'ORDER' },
+          { content_type: 'text', title: '➡️ Другой товар', payload: 'NEXT_PRODUCT' }
+        ]
+      }
+    })
+  });
+}
+
+async function sendNextProduct(recipientId) {
+  productIndex++;
+  const categoryProducts = products[currentCategory];
+
+  if (productIndex >= categoryProducts.length) productIndex = 0;
+
+  const product = categoryProducts[productIndex];
+
+  await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_type: 'RESPONSE',
+      recipient: { id: recipientId },
+      message: {
+        text: `👗 ${product.name}\nРазмеры: ${product.size}\nЦена: ${product.price}`,
+        quick_replies: [
+          { content_type: 'text', title: '🛒 Заказать', payload: 'ORDER' },
+          { content_type: 'text', title: '➡️ Другой товар', payload: 'NEXT_PRODUCT' }
+        ]
+      }
+    })
+  });
+}
+
+// ===== СТАРТ СЕРВЕРА =====
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
   console.log(`🚀 Сервер запущен на порту ${PORT}`);
