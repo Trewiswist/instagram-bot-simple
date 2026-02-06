@@ -5,10 +5,10 @@ const app = express();
 app.use(express.json());
 
 // === НАСТРОЙКИ ===
-const VERIFY_TOKEN = 'my_verify_token'; // тот же, что в Meta
-const PAGE_TOKEN = 'EAAW7HPxJmKUBQqWEFdL9sfqxsmoBP4jPZAnzw7CvahZBAls3BaCqSdOCXzddbw0kjBBc73PIIMmuBwNhYbZAtunztGCOroZCoS75PZBWu91on9eud7156RRy1b3fFdazQhZArWLRB2u8Rclg7hvWxGrgpks2XAUUzlXfiX3e6aXyOt7NLv1zbLE9Q7k6IN2YY3FZBV27AZDZD'; // Instagram Page Access Token
+const VERIFY_TOKEN = 'my_verify_token'; // сюда твой verify token
+const PAGE_TOKEN = 'EAAW7HPxJmKUBQqWEFdL9sfqxsmoBP4jPZAnzw7CvahZBAls3BaCqSdOCXzddbw0kjBBc73PIIMmuBwNhYbZAtunztGCOroZCoS75PZBWu91on9eud7156RRy1b3fFdazQhZArWLRB2u8Rclg7hvWxGrgpks2XAUUzlXfiX3e6aXyOt7NLv1zbLE9Q7k6IN2YY3FZBV27AZDZD'; // сюда Page Access Token
 
-// === ПРОВЕРКА WEBHOOK (Meta) ===
+// === ПРОВЕРКА WEBHOOK ===
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -18,11 +18,10 @@ app.get('/webhook', (req, res) => {
         console.log('✅ Webhook verified');
         return res.status(200).send(challenge);
     }
-
     return res.sendStatus(403);
 });
 
-// === ПРИЁМ СООБЩЕНИЙ ИЗ INSTAGRAM ===
+// === ПРИЁМ СООБЩЕНИЙ ===
 app.post('/webhook', async (req, res) => {
     try {
         const entry = req.body.entry?.[0];
@@ -33,12 +32,16 @@ app.post('/webhook', async (req, res) => {
         }
 
         const senderId = messaging.sender.id;
-        const text = messaging.message.text;
+        const text = messaging.message.text.toLowerCase();
 
         console.log('📩 Сообщение:', text);
 
-        // ✅ ОТВЕТ В INSTAGRAM
-        await sendMessage(senderId, 'Привет! Я бот 👋');
+        // === ЭТАП 1: каркас с кнопками ===
+        if (text.includes('привет')) {
+            await sendQuickReplies(senderId, 'Привет! Я помогу выбрать одежду 👗\nВыберите, что вас интересует ⬇️');
+        } else {
+            await sendQuickReplies(senderId, 'Выберите опцию ⬇️');
+        }
 
         res.sendStatus(200);
     } catch (err) {
@@ -47,18 +50,27 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// === ОТПРАВКА СООБЩЕНИЯ В INSTAGRAM ===
-async function sendMessage(recipientId, text) {
+// === ОТПРАВКА КНОПОК QUICK REPLIES ===
+async function sendQuickReplies(recipientId, text) {
     const url = `https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`;
+
+    const body = {
+        recipient: { id: recipientId },
+        message: {
+            text: text,
+            quick_replies: [
+                { content_type: "text", title: "👗 Товары", payload: "PRODUCTS" },
+                { content_type: "text", title: "📏 Размеры", payload: "SIZES" },
+                { content_type: "text", title: "🚚 Доставка", payload: "DELIVERY" },
+                { content_type: "text", title: "👩‍💼 Менеджер", payload: "MANAGER" }
+            ]
+        }
+    };
 
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            messaging_type: "RESPONSE", // 🔴 КРИТИЧЕСКИ ВАЖНО
-            recipient: { id: recipientId },
-            message: { text }
-        })
+        body: JSON.stringify(body)
     });
 
     const data = await response.json();
@@ -67,6 +79,4 @@ async function sendMessage(recipientId, text) {
 
 // === ЗАПУСК СЕРВЕРА ===
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-    console.log(`🚀 Сервер запущен на порту ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Сервер запущен на порту ${PORT}`));
