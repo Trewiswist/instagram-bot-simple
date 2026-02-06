@@ -6,7 +6,7 @@ app.use(express.json());
 
 // === НАСТРОЙКИ ===
 const VERIFY_TOKEN = 'my_verify_token'; // тот же, что в Meta
-const PAGE_TOKEN = 'IGAAM33qWrI19BZAFlJZAlkxd2ppeWxrNnNTc2hOUVhsakRESmptLTJsaG5sdl91LWJJUFM3dEtoaHotbTRGX0s5VHY4LUR5T2p5R09qNHZAUXzMyX0ZAzVDZAkdWFPN1FNalhra25WaU80T1NIMFphOXgtcUNIT21iZATFIYjFHOGpqbwZDZD'; // Instagram Page Access Token
+const PAGE_TOKEN = 'EAAW7HPxJmKUBQqWEFdL9sfqxsmoBP4jPZAnzw7CvahZBAls3BaCqSdOCXzddbw0kjBBc73PIIMmuBwNhYbZAtunztGCOroZCoS75PZBWu91on9eud7156RRy1b3fFdazQhZArWLRB2u8Rclg7hvWxGrgpks2XAUUzlXfiX3e6aXyOt7NLv1zbLE9Q7k6IN2YY3FZBV27AZDZD'; // Instagram Page Access Token
 
 // === ПРОВЕРКА WEBHOOK (Meta) ===
 app.get('/webhook', (req, res) => {
