@@ -1,5 +1,5 @@
 import express from 'express';
-import fetch from 'node-fetch'; // если Node <18
+import fetch from 'node-fetch';
 
 const app = express();
 app.use(express.json());
@@ -15,22 +15,18 @@ app.get('/webhook', (req, res) => {
   const challenge = req.query['hub.challenge'];
 
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-    console.log('✅ Webhook verified');
     return res.status(200).send(challenge);
   }
-
   return res.sendStatus(403);
 });
 
 // ===== ПРИЁМ СООБЩЕНИЙ =====
 app.post('/webhook', async (req, res) => {
   try {
-    const entry = req.body.entry?.[0];
-    const messaging = entry?.messaging?.[0];
+    const messaging = req.body.entry?.[0]?.messaging?.[0];
     if (!messaging || messaging.message?.is_echo) return res.sendStatus(200);
 
     const senderId = messaging.sender.id;
-
     const text =
       messaging.message.quick_reply?.payload ||
       messaging.message.text?.toUpperCase();
@@ -61,16 +57,19 @@ app.post('/webhook', async (req, res) => {
         await sendProduct(senderId, 2);
         break;
 
-      case 'ORDER':
-        await sendText(senderId, '📝 Для заказа оставьте имя и номер телефона');
-        break;
-
       case 'DELIVERY':
-        await sendText(senderId, '🚚 Доставка по Украине 1–3 дня\nОплата при получении');
+        await sendDelivery(senderId);
         break;
 
       case 'MANAGER':
-        await sendText(senderId, '👩‍💼 Напишите номер телефона — менеджер свяжется с вами');
+        await sendManager(senderId);
+        break;
+
+      case 'ORDER':
+        await sendText(
+          senderId,
+          `Отлично 👍\n\nНапишите, пожалуйста:\n1️⃣ Ваше имя\n2️⃣ Номер телефона\n\nМенеджер свяжется с вами, уточнит размер и адрес доставки.`
+        );
         break;
 
       default:
@@ -78,93 +77,129 @@ app.post('/webhook', async (req, res) => {
     }
 
     res.sendStatus(200);
-  } catch (err) {
-    console.error('❌ Ошибка:', err);
+  } catch (e) {
+    console.error(e);
     res.sendStatus(500);
   }
 });
 
-// ===== ФУНКЦИИ ОТПРАВКИ =====
-async function sendText(recipientId, text) {
+// ===== ОБЩИЕ ФУНКЦИИ =====
+async function sendText(id, text) {
   await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messaging_type: 'RESPONSE',
-      recipient: { id: recipientId },
+      recipient: { id },
       message: { text }
     })
   });
 }
 
-// ===== ГЛАВНОЕ МЕНЮ =====
-async function sendMainMenu(recipientId) {
+async function sendQuickReplies(id, text, buttons) {
   await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messaging_type: 'RESPONSE',
-      recipient: { id: recipientId },
+      recipient: { id },
       message: {
-        text: 'Привет! Я помогу выбрать одежду 👗',
-        quick_replies: [
-          { content_type: 'text', title: '👗 Каталог', payload: 'CATALOG' },
-          { content_type: 'text', title: '🚚 Доставка', payload: 'DELIVERY' },
-          { content_type: 'text', title: '👩‍💼 Менеджер', payload: 'MANAGER' }
-        ]
+        text,
+        quick_replies: buttons.map(b => ({
+          content_type: 'text',
+          title: b.title,
+          payload: b.payload
+        }))
       }
     })
   });
 }
 
-// ===== МЕНЮ КАТЕГОРИЙ =====
-async function sendCategoryMenu(recipientId) {
-  await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_type: 'RESPONSE',
-      recipient: { id: recipientId },
-      message: {
-        text: 'Выберите категорию:',
-        quick_replies: [
-          { content_type: 'text', title: '👗 Платья', payload: 'DRESS' }
-        ]
-      }
-    })
-  });
+// ===== ГЛАВНОЕ МЕНЮ =====
+async function sendMainMenu(id) {
+  await sendQuickReplies(id, '123', [
+    { title: '👗 Каталог', payload: 'CATALOG' },
+    { title: '📦 Доставка и оплата', payload: 'DELIVERY' },
+    { title: '🙋 Менеджер', payload: 'MANAGER' }
+  ]);
+}
+
+// ===== КАТЕГОРИИ =====
+async function sendCategoryMenu(id) {
+  await sendQuickReplies(id, '123', [
+    { title: '👗 Платья', payload: 'DRESS' },
+    { title: '🧥 Костюмы', payload: 'DRESS' },
+    { title: '🧥 Верхняя одежда', payload: 'DRESS' },
+    { title: '🩲 Нижнее бельё', payload: 'DRESS' }
+  ]);
 }
 
 // ===== ПРОДУКТЫ =====
-const products = [
-  { name: 'Платье «Алиса»', size: 'S–M–L', price: '1100 грн', photo: 'https://...' },
-  { name: 'Платье «Луна»', size: 'S–M–L', price: '1200 грн', photo: 'https://...' },
-  { name: 'Платье «Солнце»', size: 'S–M–L', price: '1300 грн', photo: 'https://...' }
-];
+const products = [1, 2, 3];
 
-async function sendProduct(recipientId, index) {
-  const product = products[index];
-  if (!product) return sendText(recipientId, '❗ Товар не найден');
+async function sendProduct(id, index) {
+  if (index >= products.length) {
+    return sendQuickReplies(
+      id,
+      'Это все модели из этой категории 😊\nХотите выбрать что-то ещё?',
+      [
+        { title: '🔙 В каталог', payload: 'CATALOG' },
+        { title: '🙋 Менеджер', payload: 'MANAGER' }
+      ]
+    );
+  }
 
   await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       messaging_type: 'RESPONSE',
-      recipient: { id: recipientId },
+      recipient: { id },
       message: {
-        text: `👗 ${product.name}\nРазмеры: ${product.size}\nЦена: ${product.price}`,
-        quick_replies: [
-          { content_type: 'text', title: '🛒 Заказать', payload: 'ORDER' },
-          {
-            content_type: 'text',
-            title: '➡️ Следующий',
-            payload: index + 1 < products.length ? `DRESS${index + 2}` : 'CATALOG'
+        attachment: {
+          type: 'template',
+          payload: {
+            template_type: 'generic',
+            elements: [
+              {
+                title: '123',
+                subtitle: '123\n123\n123',
+                image_url: '123',
+                buttons: [
+                  { type: 'postback', title: '🛒 Заказать', payload: 'ORDER' },
+                  {
+                    type: 'postback',
+                    title: '➡️ Другой товар',
+                    payload: `DRESS${index + 2}`
+                  }
+                ]
+              }
+            ]
           }
-        ]
+        }
       }
     })
   });
+}
+
+// ===== ДОСТАВКА =====
+async function sendDelivery(id) {
+  await sendQuickReplies(
+    id,
+    `📦 Доставка — Новая Почта\n💳 Оплата — наложенный платёж при получении\n\nВсе детали уточняет менеджер после оформления заказа.`,
+    [
+      { title: '📦 В каталог', payload: 'CATALOG' },
+      { title: '🙋 Менеджер', payload: 'MANAGER' }
+    ]
+  );
+}
+
+// ===== МЕНЕДЖЕР =====
+async function sendManager(id) {
+  await sendText(
+    id,
+    `Если у вас есть вопросы — мы с радостью поможем 😊\n\nНапишите, пожалуйста, как с вами связаться\n(имя + телефон)`
+  );
 }
 
 // ===== СТАРТ =====
