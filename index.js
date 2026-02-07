@@ -6,7 +6,7 @@ app.use(express.json());
 
 // ===== НАСТРОЙКИ =====
 const VERIFY_TOKEN = 'my_verify_token';
-const PAGE_TOKEN = 'EAAW7HPxJmKUBQqWEFdL9sfqxsmoBP4jPZAnzw7CvahZBAls3BaCqSdOCXzddbw0kjBBc73PIIMmuBwNhYbZAtunztGCOroZCoS75PZBWu91on9eud7156RRy1b3fFdazQhZArWLRB2u8Rclg7hvWxGrgpks2XAUUzlXfiX3e6aXyOt7NLv1zbLE9Q7k6IN2YY3FZBV27AZDZD';
+const PAGE_TOKEN = 'ТВОЙ_PAGE_ACCESS_TOKEN';
 
 // ===== ПРОВЕРКА WEBHOOK =====
 app.get('/webhook', (req, res) => {
@@ -33,8 +33,6 @@ app.post('/webhook', async (req, res) => {
 
     if (!text) return res.sendStatus(200);
 
-    console.log('📩 Пользователь:', text);
-
     switch (text) {
       case 'START':
       case 'ПРИВЕТ':
@@ -46,15 +44,7 @@ app.post('/webhook', async (req, res) => {
         break;
 
       case 'DRESS':
-        await sendProduct(senderId, 0);
-        break;
-
-      case 'DRESS2':
-        await sendProduct(senderId, 1);
-        break;
-
-      case 'DRESS3':
-        await sendProduct(senderId, 2);
+        await sendProduct(senderId);
         break;
 
       case 'DELIVERY':
@@ -117,7 +107,7 @@ async function sendQuickReplies(id, text, buttons) {
 
 // ===== ГЛАВНОЕ МЕНЮ =====
 async function sendMainMenu(id) {
-  await sendQuickReplies(id, '123', [
+  await sendQuickReplies(id, 'Выберите раздел 👇', [
     { title: '👗 Каталог', payload: 'CATALOG' },
     { title: '📦 Доставка и оплата', payload: 'DELIVERY' },
     { title: '🙋 Менеджер', payload: 'MANAGER' }
@@ -126,7 +116,7 @@ async function sendMainMenu(id) {
 
 // ===== КАТЕГОРИИ =====
 async function sendCategoryMenu(id) {
-  await sendQuickReplies(id, '123', [
+  await sendQuickReplies(id, 'Выберите категорию 👇', [
     { title: '👗 Платья', payload: 'DRESS' },
     { title: '🧥 Костюмы', payload: 'DRESS' },
     { title: '🧥 Верхняя одежда', payload: 'DRESS' },
@@ -134,21 +124,8 @@ async function sendCategoryMenu(id) {
   ]);
 }
 
-// ===== ПРОДУКТЫ =====
-const products = [1, 2, 3];
-
-async function sendProduct(id, index) {
-  if (index >= products.length) {
-    return sendQuickReplies(
-      id,
-      'Это все модели из этой категории 😊\nХотите выбрать что-то ещё?',
-      [
-        { title: '🔙 В каталог', payload: 'CATALOG' },
-        { title: '🙋 Менеджер', payload: 'MANAGER' }
-      ]
-    );
-  }
-
+// ===== ОДИН ТОВАР (ПЛАТЬЯ) =====
+async function sendProduct(id) {
   await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -162,15 +139,20 @@ async function sendProduct(id, index) {
             template_type: 'generic',
             elements: [
               {
-                title: '123',
-                subtitle: '123\n123\n123',
-                image_url: '123',
+                title: "Короткий оверсайз дутик с съёмным капюшоном ❄️",
+                subtitle:
+                  "1244 ₴\n\n" +
+                  "Стильный зимний must-have 💜\n\n" +
+                  "❄️ Съёмный капюшон\n" +
+                  "🧣 Тепло до -20°C\n\n" +
+                  "📏 Размеры: 42–46, 48–50",
+                image_url:
+                  "https://images.prom.ua/6383632495_w640_h640_zhenskaya-zimnyaya-kurtka.jpg",
                 buttons: [
-                  { type: 'postback', title: '🛒 Заказать', payload: 'ORDER' },
                   {
                     type: 'postback',
-                    title: '➡️ Другой товар',
-                    payload: `DRESS${index + 2}`
+                    title: '🛒 Заказать',
+                    payload: 'ORDER'
                   }
                 ]
               }
@@ -186,7 +168,7 @@ async function sendProduct(id, index) {
 async function sendDelivery(id) {
   await sendQuickReplies(
     id,
-    `📦 Доставка — Новая Почта\n💳 Оплата — наложенный платёж при получении\n\nВсе детали уточняет менеджер после оформления заказа.`,
+    `📦 Доставка — Новая Почта\n💳 Оплата — наложенный платёж при получении\n\nВсе детали уточняет менеджер.`,
     [
       { title: '📦 В каталог', payload: 'CATALOG' },
       { title: '🙋 Менеджер', payload: 'MANAGER' }
