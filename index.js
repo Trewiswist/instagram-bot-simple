@@ -4,56 +4,41 @@ import fetch from 'node-fetch';
 const app = express();
 app.use(express.json());
 
-const VERIFY_TOKEN = 'my_verify_token';          // ← должен совпадать с тем, что указал в настройках webhook в Meta
-const PAGE_TOKEN = 'EAAW7HPxJmKUBQqWEFdL9sfqxsmoBP4jPZAnzw7CvahZBAls3BaCqSdOCXzddbw0kjBBc73PIIMmuBwNhYbZAtunztGCOroZCoS75PZBWu91on9eud7156RRy1b3fFdazQhZArWLRB2u8Rclg7hvWxGrgpks2XAUUzlXfiX3e6aXyOt7NLv1zbLE9Q7k6IN2YY3FZBV27AZDZD';     // ← ВСТАВЬ СВОЙ РЕАЛЬНЫЙ ТОКЕН СТРАНИЦЫ!!!
+const VERIFY_TOKEN = 'my_verify_token';
+const PAGE_TOKEN = 'EAAW7HPxJmKUBQqWEFdL9sfqxsmoBP4jPZAnzw7CvahZBAls3BaCqSdOCXzddbw0kjBBc73PIIMmuBwNhYbZAtunztGCOroZCoS75PZBWu91on9eud7156RRy1b3fFdazQhZArWLRB2u8Rclg7hvWxGrgpks2XAUUzlXfiX3e6aXyOt7NLv1zbLE9Q7k6IN2YY3FZBV27AZDZD';   // ← ОБЯЗАТЕЛЬНО ЗАМЕНИ НА РЕАЛЬНЫЙ!
 
-// ===== Верификация webhook (обязательно должно работать) =====
+// ====================== WEBHOOK ======================
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
   if (mode === 'subscribe' && token === VERIFY_TOKEN) {
-    console.log('Webhook успешно верифицирован!');
+    console.log('✅ Webhook verified');
     return res.status(200).send(challenge);
   }
-  console.log('Ошибка верификации webhook');
   return res.sendStatus(403);
 });
 
-// ===== Основной обработчик сообщений и кнопок =====
 app.post('/webhook', async (req, res) => {
   try {
-    const body = req.body;
-    if (!body.object || !body.entry) return res.sendStatus(200);
-
-    const messaging = body.entry[0]?.messaging?.[0];
+    const messaging = req.body.entry?.[0]?.messaging?.[0];
     if (!messaging || messaging.message?.is_echo) return res.sendStatus(200);
 
     const senderId = messaging.sender.id;
-    const payload = 
-      messaging.postback?.payload ||
-      messaging.message?.quick_reply?.payload ||
-      (messaging.message?.text ? 'ANY_TEXT' : null);
+    const payload = messaging.postback?.payload ||
+                    messaging.message?.quick_reply?.payload ||
+                    'ANY_TEXT';
 
-    if (!payload) return res.sendStatus(200);
+    console.log('📩 Payload:', payload);
 
-    console.log('Получен payload:', payload);
+    if (payload === 'ANY_TEXT') return sendMainMenu(senderId);
 
-    // Любой текст → главное меню
-    if (payload === 'ANY_TEXT') {
-      await sendMainMenu(senderId);
-      return res.sendStatus(200);
-    }
-
-    // Главные кнопки меню
     if (payload === 'CATALOG')    return sendCategoryMenu(senderId);
     if (payload === 'DELIVERY')   return sendDelivery(senderId);
     if (payload === 'MANAGER')    return sendManager(senderId);
-
-    // Навигация
-    if (payload === 'MENU')       return sendMainMenu(senderId);
     if (payload === 'ORDER')      return sendOrder(senderId);
+    if (payload === 'MENU')       return sendMainMenu(senderId);
 
     // Категории
     if (payload === 'CAT_DRESS')     return sendProduct(senderId, 'DRESS', 0);
@@ -61,23 +46,22 @@ app.post('/webhook', async (req, res) => {
     if (payload === 'CAT_OUTER')     return sendProduct(senderId, 'OUTER', 0);
     if (payload === 'CAT_UNDERWEAR') return sendProduct(senderId, 'UNDERWEAR', 0);
 
-    // Переход к следующему товару
+    // Следующий товар
     const match = payload.match(/(DRESS|SUIT|OUTER|UNDERWEAR)_(\d+)/);
     if (match) {
-      const [, category, index] = match;
-      return sendProduct(senderId, category, Number(index));
+      const [, cat, idx] = match;
+      return sendProduct(senderId, cat, Number(idx));
     }
 
-    // Если неизвестный payload — возвращаем в меню
     await sendMainMenu(senderId);
     res.sendStatus(200);
-  } catch (err) {
-    console.error('Ошибка в webhook:', err);
+  } catch (e) {
+    console.error(e);
     res.sendStatus(500);
   }
 });
 
-// ===== ОДИН ТОВАР (пока одинаковый везде) =====
+// ====================== ТОВАР ======================
 const PRODUCT = {
   title: 'Стильный зимний must-have 💜',
   subtitle: '❄️ Съёмный капюшон\n🧣 Тепло до -20°C\n\n📏 Размеры: 42–46, 48–50',
@@ -86,40 +70,50 @@ const PRODUCT = {
 
 const PRODUCTS_PER_CATEGORY = 3;
 
-// ===== Главное меню — вертикальные кнопки =====
+// ====================== ГЛАВНОЕ МЕНЮ ======================
 async function sendMainMenu(id) {
   await sendTemplate(id, [{
-    title: 'Добро пожаловать в магазин! ✨',
-    subtitle: 'Выберите действие:',
+    title: 'Добро пожаловать! ✨',
+    subtitle: 'Что вас интересует?',
     buttons: [
-      { title: '👗 Каталог',        payload: 'CATALOG' },
+      { title: '👗 Каталог', payload: 'CATALOG' },
       { title: '📦 Доставка и оплата', payload: 'DELIVERY' },
       { title: '🙋 Связь с менеджером', payload: 'MANAGER' }
     ]
   }]);
 }
 
-// ===== Категории =====
+// ====================== КАТАЛОГ (4 категории через карусель) ======================
 async function sendCategoryMenu(id) {
-  await sendTemplate(id, [{
-    title: 'Каталог',
-    subtitle: 'Выберите категорию:',
-    buttons: [
-      { title: '👗 Платья',           payload: 'CAT_DRESS' },
-      { title: '🧥 Костюмы',          payload: 'CAT_SUIT' },
-      { title: '🧥 Верхняя одежда',   payload: 'CAT_OUTER' },
-      { title: '🩲 Нижнее бельё',     payload: 'CAT_UNDERWEAR' },
-      { title: '🔙 Назад в меню',     payload: 'MENU' }
-    ]
-  }]);
+  await sendTemplate(id, [
+    // Карточка 1
+    {
+      title: 'Каталог',
+      subtitle: 'Выберите категорию:',
+      buttons: [
+        { title: '👗 Платья', payload: 'CAT_DRESS' },
+        { title: '🧥 Костюмы', payload: 'CAT_SUIT' },
+        { title: '🧥 Верхняя одежда', payload: 'CAT_OUTER' }
+      ]
+    },
+    // Карточка 2
+    {
+      title: 'Каталог',
+      subtitle: 'Ещё одна категория:',
+      buttons: [
+        { title: '🩲 Нижнее бельё', payload: 'CAT_UNDERWEAR' },
+        { title: '🔙 Главное меню', payload: 'MENU' }
+      ]
+    }
+  ]);
 }
 
-// ===== Товар =====
+// ====================== ТОВАР ======================
 async function sendProduct(id, category, index) {
   if (index >= PRODUCTS_PER_CATEGORY) {
     return sendTemplate(id, [{
-      title: 'Товары в этой категории закончились 😊',
-      subtitle: 'Посмотрите другие разделы?',
+      title: 'Это все товары в категории 😊',
+      subtitle: 'Хотите посмотреть другое?',
       buttons: [
         { title: '👗 В каталог', payload: 'CATALOG' },
         { title: '🔙 Главное меню', payload: 'MENU' }
@@ -132,47 +126,39 @@ async function sendProduct(id, category, index) {
     subtitle: PRODUCT.subtitle,
     image_url: PRODUCT.image_url,
     buttons: [
-      { title: '🛒 Заказать',              payload: 'ORDER' },
-      { title: '➡️ Следующий товар',       payload: `${category}_${index + 1}` },
-      { title: '🔙 В меню',                payload: 'MENU' }
+      { title: '🛒 Заказать', payload: 'ORDER' },
+      { title: '➡️ Следующий товар', payload: `${category}_${index + 1}` },
+      { title: '🔙 Меню', payload: 'MENU' }
     ]
   }]);
 }
 
-// ===== Доставка =====
+// ====================== ДОСТАВКА ======================
 async function sendDelivery(id) {
   await sendTemplate(id, [{
     title: 'Доставка и оплата',
-    subtitle: '📦 Новая Почта\n💳 Наложенный платёж / на карту\n\nМенеджер уточнит детали после заказа.',
+    subtitle: '📦 Новая Почта\n💳 Наложенный платёж / на карту\n\nДетали уточняет менеджер после заказа.',
     buttons: [
-      { title: '👗 Перейти в каталог', payload: 'CATALOG' },
-      { title: '🙋 Написать менеджеру', payload: 'MANAGER' },
-      { title: '🔙 Главное меню',       payload: 'MENU' }
+      { title: '👗 Каталог', payload: 'CATALOG' },
+      { title: '🙋 Менеджер', payload: 'MANAGER' },
+      { title: '🔙 Главное меню', payload: 'MENU' }
     ]
   }]);
 }
 
-// ===== Заказ =====
+// ====================== ЗАКАЗ ======================
 async function sendOrder(id) {
-  await sendText(id,
-    'Отлично! Чтобы оформить заказ, напишите:\n\n' +
-    '1. Ваше имя\n' +
-    '2. Номер телефона\n' +
-    '3. Что хотите заказать (название / артикул / категорию)\n\n' +
-    'Менеджер свяжется с вами в ближайшее время 💜'
-  );
+  await sendText(id, 'Отлично! 👍\n\nНапишите:\n1️⃣ Имя\n2️⃣ Телефон\n3️⃣ Что хотите заказать\n\nМенеджер свяжется с вами ❤️');
 }
 
-// ===== Связь с менеджером =====
+// ====================== МЕНЕДЖЕР ======================
 async function sendManager(id) {
-  await sendText(id,
-    'Мы на связи 😊\n\nНапишите:\n• Имя\n• Телефон\n• Ваш вопрос или пожелание\n\nОтветим максимально быстро!'
-  );
+  await sendText(id, 'Мы на связи 😊\n\nНапишите:\n• Имя\n• Телефон\n• Вопрос / пожелание\n\nОтветим быстро!');
 }
 
-// ===== Отправка карусели (generic template) =====
+// ====================== ОТПРАВКА КАРУСЕЛИ ======================
 async function sendTemplate(id, elements) {
-  const response = await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
+  const res = await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -185,7 +171,7 @@ async function sendTemplate(id, elements) {
             template_type: 'generic',
             elements: elements.map(el => ({
               title: el.title,
-              subtitle: el.subtitle || '',
+              subtitle: el.subtitle,
               image_url: el.image_url,
               buttons: el.buttons.map(b => ({
                 type: 'postback',
@@ -199,13 +185,11 @@ async function sendTemplate(id, elements) {
     })
   });
 
-  const result = await response.json();
-  if (result.error) {
-    console.error('Ошибка отправки template:', result.error);
-  }
+  const json = await res.json();
+  if (json.error) console.error('❌ Ошибка Facebook:', json.error);
 }
 
-// ===== Отправка текста =====
+// ====================== ОТПРАВКА ТЕКСТА ======================
 async function sendText(id, text) {
   await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
@@ -218,8 +202,6 @@ async function sendText(id, text) {
   });
 }
 
-// Запуск сервера
+// ====================== ЗАПУСК ======================
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => {
-  console.log(`🚀 Бот запущен на порту ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Бот запущен на порту ${PORT}`));
