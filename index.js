@@ -27,44 +27,36 @@ app.post('/webhook', async (req, res) => {
 
     const senderId = messaging.sender.id;
     const payload =
-      messaging.message.quick_reply?.payload ||
       messaging.postback?.payload ||
+      messaging.message.quick_reply?.payload ||
       'ANY_TEXT';
 
     console.log('📩 Payload:', payload);
 
-    switch (payload) {
-      case 'CATALOG':
-        await sendCategoryMenu(senderId);
-        break;
+    // ===== ЛЮБОЙ ТЕКСТ → МЕНЮ =====
+    if (payload === 'ANY_TEXT') {
+      await sendMainMenu(senderId);
+      return res.sendStatus(200);
+    }
 
-      case 'DELIVERY':
-        await sendDelivery(senderId);
-        break;
+    // ===== РОУТЕР =====
+    if (payload === 'CATALOG') return sendCategoryMenu(senderId);
+    if (payload === 'DELIVERY') return sendDelivery(senderId);
+    if (payload === 'MANAGER') return sendManager(senderId);
+    if (payload === 'ORDER') return sendOrder(senderId);
+    if (payload === 'MENU') return sendMainMenu(senderId);
 
-      case 'MANAGER':
-        await sendManager(senderId);
-        break;
+    // категории
+    if (payload === 'CAT_DRESS') return sendProduct(senderId, 'DRESS', 0);
+    if (payload === 'CAT_SUIT') return sendProduct(senderId, 'SUIT', 0);
+    if (payload === 'CAT_OUTER') return sendProduct(senderId, 'OUTER', 0);
+    if (payload === 'CAT_UNDERWEAR') return sendProduct(senderId, 'UNDERWEAR', 0);
 
-      case 'CAT_DRESS':
-        await sendProduct(senderId, 'DRESS', 0);
-        break;
-
-      case 'CAT_SUIT':
-        await sendProduct(senderId, 'SUIT', 0);
-        break;
-
-      case 'CAT_OUTER':
-        await sendProduct(senderId, 'OUTER', 0);
-        break;
-
-      case 'CAT_UNDERWEAR':
-        await sendProduct(senderId, 'UNDERWEAR', 0);
-        break;
-
-      default:
-        // 🔥 ЛЮБОЙ ТЕКСТ → МЕНЮ
-        await sendMainMenu(senderId);
+    // товары
+    const match = payload.match(/(DRESS|SUIT|OUTER|UNDERWEAR)_(\d+)/);
+    if (match) {
+      const [, category, index] = match;
+      return sendProduct(senderId, category, Number(index));
     }
 
     res.sendStatus(200);
@@ -74,8 +66,8 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ===== ДАННЫЕ ТОВАРА =====
-const demoProduct = {
+// ===== ДАННЫЕ ТОВАРА (ПОКА ОДИН НА ВСЕ) =====
+const PRODUCT = {
   title: '123',
   subtitle:
     'Стильный зимний must-have 💜\n\n' +
@@ -86,14 +78,14 @@ const demoProduct = {
     'https://images.prom.ua/6383632495_w640_h640_zhenskaya-zimnyaya-kurtka.jpg'
 };
 
-const PRODUCTS_COUNT = 3;
+const PRODUCTS_PER_CATEGORY = 3;
 
-// ===== ГЛАВНОЕ МЕНЮ (ВЕРТИКАЛЬНО) =====
+// ===== ГЛАВНОЕ МЕНЮ =====
 async function sendMainMenu(id) {
   await sendTemplate(id, [
     {
-      title: 'Добро пожаловать 👋',
-      subtitle: 'Я помогу выбрать одежду',
+      title: 'Главное меню',
+      subtitle: 'Выберите действие',
       buttons: [
         { title: '👗 Каталог', payload: 'CATALOG' },
         { title: '📦 Доставка и оплата', payload: 'DELIVERY' },
@@ -107,7 +99,7 @@ async function sendMainMenu(id) {
 async function sendCategoryMenu(id) {
   await sendTemplate(id, [
     {
-      title: 'Категории',
+      title: 'Каталог',
       subtitle: 'Выберите категорию',
       buttons: [
         { title: '👗 Платья', payload: 'CAT_DRESS' },
@@ -121,7 +113,7 @@ async function sendCategoryMenu(id) {
 
 // ===== ТОВАР =====
 async function sendProduct(id, category, index) {
-  if (index >= PRODUCTS_COUNT) {
+  if (index >= PRODUCTS_PER_CATEGORY) {
     return sendTemplate(id, [
       {
         title: 'Это все модели 😊',
@@ -136,15 +128,16 @@ async function sendProduct(id, category, index) {
 
   await sendTemplate(id, [
     {
-      title: demoProduct.title,
-      subtitle: demoProduct.subtitle,
-      image_url: demoProduct.image,
+      title: PRODUCT.title,
+      subtitle: PRODUCT.subtitle,
+      image_url: PRODUCT.image,
       buttons: [
         { title: '🛒 Заказать', payload: 'ORDER' },
         {
-          title: '➡️ Другой товар',
+          title: '➡️ Следующий товар',
           payload: `${category}_${index + 1}`
-        }
+        },
+        { title: '🔙 Меню', payload: 'MENU' }
       ]
     }
   ]);
@@ -163,6 +156,14 @@ async function sendDelivery(id) {
       ]
     }
   ]);
+}
+
+// ===== ЗАКАЗ =====
+async function sendOrder(id) {
+  await sendText(
+    id,
+    'Отлично 👍\n\nНапишите, пожалуйста:\n1️⃣ Ваше имя\n2️⃣ Номер телефона\n\nМенеджер свяжется с вами.'
+  );
 }
 
 // ===== МЕНЕДЖЕР =====
