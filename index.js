@@ -33,32 +33,34 @@ app.post('/webhook', async (req, res) => {
 
     console.log('📩 Payload:', payload);
 
-    // ===== ЛЮБОЙ ТЕКСТ → МЕНЮ =====
+    // Любой текст от пользователя → главное меню
     if (payload === 'ANY_TEXT') {
       await sendMainMenu(senderId);
       return res.sendStatus(200);
     }
 
-    // ===== РОУТЕР =====
-    if (payload === 'CATALOG') return sendCategoryMenu(senderId);
-    if (payload === 'DELIVERY') return sendDelivery(senderId);
-    if (payload === 'MANAGER') return sendManager(senderId);
-    if (payload === 'ORDER') return sendOrder(senderId);
-    if (payload === 'MENU') return sendMainMenu(senderId);
+    // Роутер
+    if (payload === 'CATALOG')    return sendCategoryMenu(senderId);
+    if (payload === 'DELIVERY')   return sendDelivery(senderId);
+    if (payload === 'MANAGER')    return sendManager(senderId);
+    if (payload === 'ORDER')      return sendOrder(senderId);
+    if (payload === 'MENU')       return sendMainMenu(senderId);
 
-    // категории
-    if (payload === 'CAT_DRESS') return sendProduct(senderId, 'DRESS', 0);
-    if (payload === 'CAT_SUIT') return sendProduct(senderId, 'SUIT', 0);
-    if (payload === 'CAT_OUTER') return sendProduct(senderId, 'OUTER', 0);
+    // Категории
+    if (payload === 'CAT_DRESS')     return sendProduct(senderId, 'DRESS', 0);
+    if (payload === 'CAT_SUIT')      return sendProduct(senderId, 'SUIT', 0);
+    if (payload === 'CAT_OUTER')     return sendProduct(senderId, 'OUTER', 0);
     if (payload === 'CAT_UNDERWEAR') return sendProduct(senderId, 'UNDERWEAR', 0);
 
-    // товары
+    // Конкретный товар
     const match = payload.match(/(DRESS|SUIT|OUTER|UNDERWEAR)_(\d+)/);
     if (match) {
       const [, category, index] = match;
       return sendProduct(senderId, category, Number(index));
     }
 
+    // На всякий случай — если неизвестный payload
+    await sendMainMenu(senderId);
     res.sendStatus(200);
   } catch (e) {
     console.error(e);
@@ -66,77 +68,74 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ===== ДАННЫЕ ТОВАРА (ПОКА ОДИН НА ВСЕ) =====
+// ===== ДАННЫЕ ТОВАРА (один на все категории пока) =====
 const PRODUCT = {
-  title: '123',
+  title: 'Стильный зимний must-have 💜',
   subtitle:
-    'Стильный зимний must-have 💜\n\n' +
     '❄️ Съёмный капюшон\n' +
     '🧣 Тепло до -20°C\n\n' +
     '📏 Размеры: 42–46, 48–50',
-  image:
-    'https://images.prom.ua/6383632495_w640_h640_zhenskaya-zimnyaya-kurtka.jpg'
+  image_url: 'https://images.prom.ua/6383632495_w640_h640_zhenskaya-zimnyaya-kurtka.jpg'
 };
 
 const PRODUCTS_PER_CATEGORY = 3;
 
-// ===== ГЛАВНОЕ МЕНЮ =====
+// ===== ГЛАВНОЕ МЕНЮ (вертикальные кнопки) =====
 async function sendMainMenu(id) {
   await sendTemplate(id, [
     {
-      title: 'Главное меню',
-      subtitle: 'Выберите действие',
+      title: 'Добро пожаловать! ✨',
+      subtitle: 'Чем могу помочь?',
       buttons: [
         { title: '👗 Каталог', payload: 'CATALOG' },
         { title: '📦 Доставка и оплата', payload: 'DELIVERY' },
-        { title: '🙋 Менеджер', payload: 'MANAGER' }
+        { title: '🙋 Связь с менеджером', payload: 'MANAGER' }
       ]
     }
   ]);
 }
 
-// ===== КАТЕГОРИИ =====
+// ===== МЕНЮ КАТЕГОРИЙ (вертикально) =====
 async function sendCategoryMenu(id) {
   await sendTemplate(id, [
     {
       title: 'Каталог',
-      subtitle: 'Выберите категорию',
+      subtitle: 'Выберите категорию:',
       buttons: [
         { title: '👗 Платья', payload: 'CAT_DRESS' },
         { title: '🧥 Костюмы', payload: 'CAT_SUIT' },
         { title: '🧥 Верхняя одежда', payload: 'CAT_OUTER' },
-        { title: '🩲 Нижнее бельё', payload: 'CAT_UNDERWEAR' }
+        { title: '🩲 Нижнее бельё', payload: 'CAT_UNDERWEAR' },
+        { title: '🔙 В меню', payload: 'MENU' }
       ]
     }
   ]);
 }
 
-// ===== ТОВАР =====
+// ===== ОТПРАВКА ТОВАРА =====
 async function sendProduct(id, category, index) {
   if (index >= PRODUCTS_PER_CATEGORY) {
-    return sendTemplate(id, [
+    await sendTemplate(id, [
       {
-        title: 'Это все модели 😊',
-        subtitle: 'Хотите выбрать что-то ещё?',
+        title: 'Это все модели в категории 😊',
+        subtitle: 'Хотите посмотреть ещё?',
         buttons: [
           { title: '🔙 В каталог', payload: 'CATALOG' },
-          { title: '🙋 Менеджер', payload: 'MANAGER' }
+          { title: '🔙 Главное меню', payload: 'MENU' }
         ]
       }
     ]);
+    return;
   }
 
   await sendTemplate(id, [
     {
       title: PRODUCT.title,
       subtitle: PRODUCT.subtitle,
-      image_url: PRODUCT.image,
+      image_url: PRODUCT.image_url,
       buttons: [
         { title: '🛒 Заказать', payload: 'ORDER' },
-        {
-          title: '➡️ Следующий товар',
-          payload: `${category}_${index + 1}`
-        },
+        { title: '➡️ Следующий товар', payload: `${category}_${index + 1}` },
         { title: '🔙 Меню', payload: 'MENU' }
       ]
     }
@@ -149,10 +148,13 @@ async function sendDelivery(id) {
     {
       title: 'Доставка и оплата',
       subtitle:
-        '📦 Новая Почта\n💳 Наложенный платёж\n\nВсе детали уточняет менеджер',
+        '📦 Новая Почта\n' +
+        '💳 Наложенный платёж / Оплата на карту\n\n' +
+        'Все детали и точную стоимость уточняет менеджер после заказа.',
       buttons: [
-        { title: '📦 В каталог', payload: 'CATALOG' },
-        { title: '🙋 Менеджер', payload: 'MANAGER' }
+        { title: '👗 В каталог', payload: 'CATALOG' },
+        { title: '🙋 Менеджер', payload: 'MANAGER' },
+        { title: '🔙 Главное меню', payload: 'MENU' }
       ]
     }
   ]);
@@ -162,7 +164,11 @@ async function sendDelivery(id) {
 async function sendOrder(id) {
   await sendText(
     id,
-    'Отлично 👍\n\nНапишите, пожалуйста:\n1️⃣ Ваше имя\n2️⃣ Номер телефона\n\nМенеджер свяжется с вами.'
+    'Отлично! 👍\n\nНапишите, пожалуйста:\n' +
+    '1️⃣ Ваше имя\n' +
+    '2️⃣ Номер телефона\n' +
+    '3️⃣ Что именно хотите заказать (можно скопировать название или категорию)\n\n' +
+    'Менеджер свяжется с вами в ближайшее время ❤️'
   );
 }
 
@@ -170,11 +176,15 @@ async function sendOrder(id) {
 async function sendManager(id) {
   await sendText(
     id,
-    'Если у вас есть вопросы — мы с радостью поможем 😊\n\nНапишите имя и номер телефона'
+    'Мы на связи! 😊\n\nНапишите, пожалуйста:\n' +
+    '• Ваше имя\n' +
+    '• Номер телефона\n' +
+    '• Ваш вопрос или пожелание\n\n' +
+    'Ответим максимально быстро!'
   );
 }
 
-// ===== TEMPLATE =====
+// ===== ОТПРАВКА КАРУСЕЛИ (generic template) =====
 async function sendTemplate(id, elements) {
   await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
@@ -189,9 +199,9 @@ async function sendTemplate(id, elements) {
             template_type: 'generic',
             elements: elements.map(el => ({
               title: el.title,
-              subtitle: el.subtitle,
-              image_url: el.image_url,
-              buttons: el.buttons.map(b => ({
+              subtitle: el.subtitle || '',
+              image_url: el.image_url || undefined,
+              buttons: (el.buttons || []).map(b => ({
                 type: 'postback',
                 title: b.title,
                 payload: b.payload
@@ -204,7 +214,7 @@ async function sendTemplate(id, elements) {
   });
 }
 
-// ===== TEXT =====
+// ===== ПРОСТО ТЕКСТ =====
 async function sendText(id, text) {
   await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
@@ -217,6 +227,6 @@ async function sendText(id, text) {
   });
 }
 
-// ===== START =====
+// ===== ЗАПУСК СЕРВЕРА =====
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, () => console.log(`🚀 Сервер запущен: ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Сервер запущен на порту ${PORT}`));
