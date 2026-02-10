@@ -5,7 +5,10 @@ const app = express();
 app.use(express.json());
 
 const VERIFY_TOKEN = 'my_verify_token';
-const PAGE_TOKEN = 'EAAW7HPxJmKUBQn3AqGlaOw9LZBr00o8tBoorCNsFdx06k5wtn4vqN26Cw71RiMNO1UgforbHDqgbPio45XdJrXwi7sUw4SBILEMgSTR3BwZAlS29EPmBFhaMZAmDf3aBJQz96BayFfhoQxZAsXkJga3lCMD8ybweoAHpE3bv0pjhKRflMsSBgZCyjZBXaKZB9PZB40EB9AZDZD'; // ← ОБЯЗАТЕЛЬНО ЗАМЕНИ
+const PAGE_TOKEN = 'EAAW7HPxJmKUBQn3AqGlaOw9LZBr00o8tBoorCNsFdx06k5wtn4vqN26Cw71RiMNO1UgforbHDqgbPio45XdJrXwi7sUw4SBILEMgSTR3BwZAlS29EPmBFhaMZAmDf3aBJQz96BayFfhoQxZAsXkJga3lCMD8ybweoAHpE3bv0pjhKRflMsSBgZCyjZBXaKZB9PZB40EB9AZDZD';
+
+// Последний раз, когда отправляли меню этому пользователю (защита от спама)
+const lastMenuSent = {};
 
 // ====================== ПАМЯТЬ ЗАКАЗОВ ======================
 const userState = {}; // senderId → { product, step }
@@ -32,7 +35,6 @@ const PRODUCTS = {
       image_url: 'https://images.prom.ua/7006727327_w640_h640_zhenskoe-trikotazhnoe-plate.jpg'
     }
   ],
-
   SUIT: [
     {
       name: 'Женский летний костюм ХАКИ (SM | L-XL)',
@@ -53,7 +55,6 @@ const PRODUCTS = {
       image_url: 'https://images.prom.ua/4521912170_w640_h640_zhenskij-letnij-kostyum.jpg'
     }
   ],
-
   OUTER: [
     {
       name: 'Тёплая двухсторонняя шубка-тедди Шоколад 🧸🍫',
@@ -74,8 +75,7 @@ const PRODUCTS = {
       image_url: 'https://images.prom.ua/6383632495_w640_h640_zhenskaya-zimnyaya-kurtka.jpg'
     }
   ],
-
-  UNDERWEAR: [] // пока пусто — добавь товары когда нужно
+  UNDERWEAR: [] // пока пусто
 };
 
 // ====================== WEBHOOK ======================
@@ -99,56 +99,126 @@ app.post('/webhook', async (req, res) => {
     const payload =
       messaging.postback?.payload ||
       messaging.message?.quick_reply?.payload ||
-      'ANY_TEXT';
+      (text ? 'ANY_TEXT' : null);
 
-    // ===== ОБРАБОТКА ВВОДА ПОСЛЕ ЗАКАЗА =====
+    if (!payload) return res.sendStatus(200);
+
+    console.log('📩 Получен payload:', payload, 'от', senderId);
+
+    // Защита от петли: если ANY_TEXT пришёл недавно — игнорируем
+    const now = Date.now();
+    if (payload === 'ANY_TEXT') {
+      if (lastMenuSent[senderId] && now - lastMenuSent[senderId] < 5000) {
+        console.log('Игнорируем повторный ANY_TEXT от', senderId);
+        return res.sendStatus(200);
+      }
+      lastMenuSent[senderId] = now;
+    }
+
+    // ===== ОБРАБОТКА ЗАКАЗА =====
     if (userState[senderId]?.step === 'WAIT_CONTACT' && text) {
       await sendText(
         senderId,
         `✅ Заявка отправлена менеджеру!\n\nВаш заказ:\n🛍 ${userState[senderId].product}\n\nМенеджер скоро с вами свяжется ❤️`
       );
-      // можно раскомментировать, если нужно отправлять менеджеру в чат страницы
-      // await sendText('5591234567890123', `📩 НОВЫЙ ЗАКАЗ\n\n🛍 ${userState[senderId].product}\n👤 ${text}`);
       delete userState[senderId];
       return res.sendStatus(200);
     }
 
-    // ===== МЕНЮ =====
-    if (payload === 'ANY_TEXT') return sendMainMenu(senderId);
-    if (payload === 'CATALOG') return sendCategoryMenu(senderId);
-    if (payload === 'DELIVERY') return sendDelivery(senderId);
-    if (payload === 'MANAGER') return sendManager(senderId);
-    if (payload === 'MENU') return sendMainMenu(senderId);
+    // ===== ОСНОВНОЙ РОУТЕР =====
+    switch (payload) {
+      case 'ANY_TEXT':
+        await sendMainMenu(senderId);
+        break;
+      case 'CATALOG':
+        await sendCategoryMenu(senderId);
+        break;
+      case 'DELIVERY':
+        await sendDelivery(senderId);
+        break;
+      case 'MANAGER':
+        await sendManager(senderId);
+        break;
+      case 'MENU':
+        await sendMainMenu(senderId);
+        break;
 
-    // ===== КАТЕГОРИИ =====
-    if (payload === 'CAT_DRESS') return sendProduct(senderId, 'DRESS', 0);
-    if (payload === 'CAT_SUIT') return sendProduct(senderId, 'SUIT', 0);
-    if (payload === 'CAT_OUTER') return sendProduct(senderId, 'OUTER', 0);
-    if (payload === 'CAT_UNDERWEAR') return sendProduct(senderId, 'UNDERWEAR', 0);
+      case 'CAT_DRESS':
+        await sendProduct(senderId, 'DRESS', 0);
+        break;
+      case 'CAT_SUIT':
+        await sendProduct(senderId, 'SUIT', 0);
+        break;
+      case 'CAT_OUTER':
+        await sendProduct(senderId, 'OUTER', 0);
+        break;
+      case 'CAT_UNDERWEAR':
+        await sendProduct(senderId, 'UNDERWEAR', 0);
+        break;
 
-    // ===== СЛЕДУЮЩИЙ ТОВАР =====
-    const match = payload.match(/(DRESS|SUIT|OUTER|UNDERWEAR)_(\d+)/);
-    if (match) {
-      const [, cat, idx] = match;
-      return sendProduct(senderId, cat, Number(idx));
-    }
-
-    // ===== ЗАКАЗ =====
-    if (payload.startsWith('ORDER_')) {
-      const productName = payload.replace('ORDER_', '');
-      userState[senderId] = { product: productName, step: 'WAIT_CONTACT' };
-      return sendText(
-        senderId,
-        '🛒 Отлично!\n\nНапишите одним сообщением:\n👤 Имя\n📞 Телефон'
-      );
+      default:
+        if (payload.startsWith('ORDER_')) {
+          const productName = payload.replace('ORDER_', '');
+          userState[senderId] = { product: productName, step: 'WAIT_CONTACT' };
+          await sendText(
+            senderId,
+            '🛒 Отлично!\n\nНапишите одним сообщением:\n👤 Имя\n📞 Телефон'
+          );
+        } else if (payload.match(/(DRESS|SUIT|OUTER|UNDERWEAR)_\d+/)) {
+          const match = payload.match(/(DRESS|SUIT|OUTER|UNDERWEAR)_(\d+)/);
+          const [, cat, idx] = match;
+          await sendProduct(senderId, cat, Number(idx));
+        } else {
+          console.log('Неизвестный payload, ничего не делаем:', payload);
+        }
     }
 
     res.sendStatus(200);
   } catch (e) {
-    console.error(e);
+    console.error('Ошибка в webhook:', e);
     res.sendStatus(500);
   }
 });
+
+// ====================== ОТПРАВКА ШАБЛОНА ======================
+async function sendTemplate(id, elements) {
+  console.log('Пытаюсь отправить шаблон пользователю:', id);
+  console.log('Элементы:', JSON.stringify(elements, null, 2));
+
+  const res = await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_type: 'RESPONSE',
+      recipient: { id },
+      message: {
+        attachment: {
+          type: 'template',
+          payload: {
+            template_type: 'generic',
+            elements: elements.map(el => ({
+              title: el.title,
+              subtitle: el.subtitle || '',
+              image_url: el.image_url || undefined,
+              buttons: (el.buttons || []).map(b => ({
+                type: 'postback',
+                title: b.title,
+                payload: b.payload
+              }))
+            }))
+          }
+        }
+      }
+    })
+  });
+
+  const json = await res.json();
+  console.log('Ответ от Facebook:', JSON.stringify(json, null, 2));
+
+  if (json.error) {
+    console.error('❌ ОШИБКА ОТПРАВКИ:', json.error);
+  }
+}
 
 // ====================== МЕНЮ ======================
 async function sendMainMenu(id) {
@@ -192,7 +262,6 @@ async function sendProduct(id, category, index) {
     await sendText(id, 'Это все товары в категории 😊');
     return sendMainMenu(id);
   }
-
   const p = items[index];
   await sendTemplate(id, [{
     title: p.title,
@@ -206,35 +275,10 @@ async function sendProduct(id, category, index) {
   }]);
 }
 
-// ====================== ДОП. ФУНКЦИИ ======================
-async function sendDelivery(id) {
-  await sendText(id, '📦 Доставка: Новая Почта\n💳 Оплата: наложенный платёж / на карту\n\nМенеджер уточнит детали после оформления заказа');
-}
-
-async function sendManager(id) {
-  await sendText(id, '🙋 Напишите ваш вопрос или пожелание — менеджер ответит в ближайшее время');
-}
-
-// ====================== ОТПРАВКА СООБЩЕНИЙ ======================
-async function sendTemplate(id, elements) {
-  await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_type: 'RESPONSE',
-      recipient: { id },
-      message: {
-        attachment: {
-          type: 'template',
-          payload: { template_type: 'generic', elements }
-        }
-      }
-    })
-  });
-}
-
+// ====================== ТЕКСТОВЫЕ СООБЩЕНИЯ ======================
 async function sendText(id, text) {
-  await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
+  console.log('Отправляю текст пользователю', id, ':', text);
+  const res = await fetch(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_TOKEN}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -243,6 +287,20 @@ async function sendText(id, text) {
       message: { text }
     })
   });
+  const json = await res.json();
+  console.log('Ответ от Facebook на текст:', JSON.stringify(json, null, 2));
+  if (json.error) {
+    console.error('❌ ОШИБКА ОТПРАВКИ ТЕКСТА:', json.error);
+  }
+}
+
+// ====================== ДОП. ФУНКЦИИ ======================
+async function sendDelivery(id) {
+  await sendText(id, '📦 Доставка: Новая Почта\n💳 Оплата: наложенный платёж / на карту\n\nМенеджер уточнит детали после оформления заказа');
+}
+
+async function sendManager(id) {
+  await sendText(id, '🙋 Напишите ваш вопрос или пожелание — менеджер ответит в ближайшее время');
 }
 
 // ====================== ЗАПУСК ======================
