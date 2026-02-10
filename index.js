@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 
 const VERIFY_TOKEN = 'my_verify_token';
-const PAGE_TOKEN = 'EAAW7HPxJmKUBQqWEFdL9sfqxsmoBP4jPZAnzw7CvahZBAls3BaCqSdOCXzddbw0kjBBc73PIIMmuBwNhYbZAtunztGCOroZCoS75PZBWu91on9eud7156RRy1b3fFdazQhZArWLRB2u8Rclg7hvWxGrgpks2XAUUzlXfiX3e6aXyOt7NLv1zbLE9Q7k6IN2YY3FZBV27AZDZD'; // ← ОБЯЗАТЕЛЬНО ЗАМЕНИ
+const PAGE_TOKEN = 'EAAW7HPxJmKUBQmXPP1yCrwRzeYoZBgQ8vudSxI7y9q9hBZAH1BmsS6ZCEk8EN9y45b8zqIGLYmKJ5ljFoAhT7mdW8DDvRr6wnk8TV7oLx6Qmie4LZCpVC8nLIZBCzags0Leic6gFSu5zJNZCGC7VndAKHVuM7rOKZAJUPzqDRyFwFWqZA2kZCehuveEQsogtktGwXcbg0sgZDZD'; // ← ОБЯЗАТЕЛЬНО ЗАМЕНИ
 
 // ====================== ПАМЯТЬ ЗАКАЗОВ ======================
 const userState = {}; // senderId → { product, step }
